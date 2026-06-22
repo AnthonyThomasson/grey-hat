@@ -1,0 +1,22 @@
+SSHLib = {}
+SSHLib.logViewerPath = "/usr/bin/LogViewer.exe"
+SSHLib.logPath       = "/var/system.log"
+
+SSHLib.openLog = function(sh)
+    if sh == null or typeof(sh) != "shell" then
+        print("[OPEN_LOG] ERROR: no valid shell passed")
+        return false
+    end if
+
+    res = sh.launch(self.logViewerPath, self.logPath)
+    if res == 0 then
+        print("[OPEN_LOG] ERROR: couldn't launch LogViewer via script — use the")
+        print("           terminal fallback (sudo -s, then LogViewer " + self.logPath + ")")
+        return false
+    end if
+
+    print("[OPEN_LOG] SUCCESS: LogViewer opened on " + sh.host_computer.local_ip)
+    return true
+end function
+
+globals.SSHLib = SSHLib

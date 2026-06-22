@@ -1,0 +1,66 @@
+// Command: ssh_safe <user@password> <ip> [toolsDir] [port]
+// Connects via SSH, deploys toolsDir to the remote (libs -> /lib, tools -> /bin),
+// opens LogViewer to clean your log rows, then drops you into the remote terminal.
+// toolsDir defaults to <home>/Scripts/Tools.
+import_code("/lib/ssh_lib.src")
+import_code("/lib/deploy_lib.src")
+
+printUsage = function()
+    print("ssh_safe — deploy a local tools dir to a remote box over SSH, then open a shell")
+    print("")
+    print("Usage:")
+    print("  ssh_safe <user@password> <ip> [toolsDir] [port]")
+    print("")
+    print("Arguments:")
+    print("  user@password  SSH login joined with '@'   (e.g. admin@hunter2)")
+    print("  ip             remote IP to connect to")
+    print("  toolsDir       local source dir to deploy  (default: " + home_dir + "/Scripts/Tools)")
+    print("                 relative paths resolve against the current dir")
+    print("  port           SSH port                    (default: 22)")
+    print("                 to set port, toolsDir must be given too (positional)")
+    print("")
+    print("Does:  uploads toolsDir/*.src and toolsDir/libs/*.src to the remote,")
+    print("       moves libs -> /lib, builds tools -> /bin, opens LogViewer,")
+    print("       then hands you the remote terminal.")
+    print("")
+    print("Examples:")
+    print("  ssh_safe admin@hunter2 38.21.5.9")
+    print("  ssh_safe admin@hunter2 38.21.5.9 /home/admin/proj")
+    print("  ssh_safe admin@hunter2 38.21.5.9 /home/admin/proj 2222")
+end function
+
+if params.len > 0 and (params[0] == "-h" or params[0] == "--help") then
+    printUsage
+    exit("")
+end if
+if params.len < 2 or params.len > 4 then
+    printUsage
+    exit("")
+end if
+
+credentials = params[0].split("@")
+user = credentials[0]
+password = credentials[1]
+port = 22
+if params.len == 4 then port = params[3].to_int
+if typeof(port) != "number" then exit("Invalid port: " + port)
+
+toolDir = home_dir + "/Scripts/Tools"
+if params.len > 2 and params[2] != "" then
+    toolDir = params[2]
+    if toolDir[0] != "/" then toolDir = current_path + "/" + toolDir
+end if
+
+print("Connecting...")
+shell = get_shell.connect_service(params[1], port, user, password, "ssh")
+if typeof(shell) == "string" then exit(shell)
+if not shell then exit("connection failed")
+
+buildProject(toolDir, shell, user, true)
+
+print("Your IP (delete the rows showing this): " + get_router.public_ip)
+if user != "root" then
+    print("WARNING: connected as '" + user + "', not root — LogViewer won't let you delete")
+end if
+
+shell.start_terminal

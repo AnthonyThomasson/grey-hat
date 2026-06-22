@@ -1,0 +1,102 @@
+// deploy_lib.src — library for deploying a Grey Hack tool project.
+// import_code("/lib/build_deploy.src") then call:
+//   buildProject(toolDir)                            // local build from an absolute toolDir
+//   buildProject(toolDir, shell)                     // build on a remote (shell from connect_service)
+//   buildProject(toolDir, shell, user)               // remote build; user = the login you connected as
+//   buildProject(toolDir, shell, user, keepExisting) // keepExisting=true -> skip bins already in /bin
+//
+//   libs:  move  <srcDir>/libs/*.src -> /lib  (sources, NOT built)
+//   tools: build <srcDir>/*.src      -> /bin  (replace, or skip existing if keepExisting)
+//
+// Local:  srcDir = toolDir.
+// Remote: your local tools root is scp'd into the logged-in user's home as
+//         <userHome>/<folderName>, and that becomes srcDir. GreyScript has no
+//         "remote logged-in user" accessor, so the login name must be passed in
+//         (active_user is LOCAL only).
+srcFiles = function(comp, dir)
+    out = []
+    folder = comp.File(dir)
+    if folder == null then return out
+    for f in folder.get_files
+        if f.name.len > 4 and f.name[-4:] == ".src" then out.push(f)
+    end for
+    return out
+end function
+ensureDir = function(comp, path)
+    if comp.File(path) != null then return
+    cut = path.lastIndexOf("/")
+    parent = path[:cut]
+    if parent == "" then parent = "/"
+    ensureDir(comp, parent)                 // make parents first (handles deep paths)
+    comp.create_folder(parent, path[cut + 1:])
+end function
+userHome = function(user)
+    if user == "root" then return "/root"
+    return "/home/" + user
+end function
+buildProject = function(toolDir, shell, user, keepExisting)
+    local = get_shell
+    remote = shell
+    if shell == null then shell = local
+    if remote != null and user == null then exit("buildProject: remote deploy needs a user")
+    if user == null then user = active_user     // only reached for local builds
+    comp = shell.host_computer
+    srcDir = toolDir                            // where sources live on the target
+    // remote shell passed: upload the local tools root into the user's home
+    if remote != null then
+        leaf = toolDir[toolDir.lastIndexOf("/") + 1:]   // local folder name, e.g. "Tools"
+        srcDir = userHome(user) + "/" + leaf            // -> <home>/<folderName>
+        print("== copying tools " + toolDir + " -> " + comp.public_ip + ":" + srcDir + " ==")
+        ensureDir(comp, srcDir)
+        ensureDir(comp, srcDir + "/libs")
+        for f in srcFiles(local.host_computer, toolDir)
+            print("[COPY] " + f.name + " -> " + srcDir + "/" + f.name)
+            res = local.scp(toolDir + "/" + f.name, srcDir, remote)
+            if typeof(res) == "string" then print("[FAIL] " + f.name + ": " + res)
+        end for
+        for f in srcFiles(local.host_computer, toolDir + "/libs")
+            print("[COPY] libs/" + f.name + " -> " + srcDir + "/libs/" + f.name)
+            res = local.scp(toolDir + "/libs/" + f.name, srcDir + "/libs", remote)
+            if typeof(res) == "string" then print("[FAIL] libs/" + f.name + ": " + res)
+        end for
+    end if
+    // libs: move sources into /lib (no build; move overwrites)
+    ensureDir(comp, "/lib")
+    libs = 0
+    for f in srcFiles(comp, srcDir + "/libs")
+        res = f.move("/lib", f.name)
+        if typeof(res) == "string" then
+            print("[FAIL] lib " + f.name + ": " + res)
+        else
+            print("[ OK ] lib " + f.name + " -> /lib/" + f.name)
+            libs = libs + 1
+        end if
+    end for
+    // tools: build root sources into /bin
+    //   keepExisting truthy -> leave existing bins in place (build only new ones)
+    //   otherwise            -> replace existing (delete then build)
+    ensureDir(comp, "/bin")
+    tools = 0
+    skipped = 0
+    for f in srcFiles(comp, srcDir)
+        binPath = "/bin/" + f.name[:-4]
+        old = comp.File(binPath)
+        if old != null then
+            if keepExisting then
+                print("[SKIP] " + f.name + " (exists)")
+                skipped = skipped + 1
+                continue
+            end if
+            old.delete
+        end if
+        res = shell.build(srcDir + "/" + f.name, "/bin")
+        if res != "" then
+            print("[FAIL] " + f.name + ": " + res)
+        else
+            print("[ OK ] " + f.name + " -> " + binPath)
+            tools = tools + 1
+        end if
+    end for
+    print("done — " + libs + " lib(s) -> /lib, " + tools + " tool(s) -> /bin, " + skipped + " skipped")
+    return {"libs": libs, "tools": tools, "skipped": skipped}
+end function

@@ -1,0 +1,59 @@
+// build_lib.src — deploy a Grey Hack tool project.
+//   1) compile every .src under <cwd>/libs into /lib with allowImport=true,
+//      so tools can import them from a stable absolute path.
+//   2) compile every .src in <cwd> (incl. this file) into /bin as runnable
+//      programs.
+// Existing files of the same name in either dest are replaced.
+// Run from the folder that holds your tool sources:
+//   cd /path/to/tools
+//   build_lib
+
+if params.len > 0 and (params[0] == "-h" or params[0] == "--help") then
+    print("build_lib — compile libs into /lib (importable), then tools into /bin")
+    print("Run from the folder holding your tool sources. Libs build first.")
+    exit("")
+end if
+
+comp = get_shell.host_computer
+
+ensureDir = function(path)
+    if comp.File(path) != null then return
+    cut = path.lastIndexOf("/")
+    parent = path[:cut]
+    if parent == "" then parent = "/"
+    comp.create_folder(parent, path[cut + 1:])
+end function
+
+// compile every .src in srcDir into destDir; allowImport passed to build
+buildAll = function(srcDir, destDir, allowImport)
+    ensureDir(destDir)
+    folder = comp.File(srcDir)
+    n = 0
+    if folder == null then
+        print("(skip) no folder at " + srcDir)
+        return n
+    end if
+    print("== building " + srcDir + " -> " + destDir + " ==")
+    for f in folder.get_files
+        name = f.name
+        if name.len <= 4 or name[-4:] != ".src" then continue
+
+        binPath = destDir + "/" + name[:-4]
+        existing = comp.File(binPath)
+        if existing != null then existing.delete
+
+        res = get_shell.build(srcDir + "/" + name, destDir, allowImport)
+        if res != "" then
+            print("[FAIL] " + name + ": " + res)
+        else
+            print("[ OK ] " + name + " -> " + binPath)
+            n = n + 1
+        end if
+    end for
+    return n
+end function
+
+cwd = current_path
+libs = buildAll(cwd + "/libs", "/lib", true)
+tools = buildAll(cwd, "/bin", false)
+print("done — " + libs + " lib(s) -> /lib, " + tools + " tool(s) -> /bin")
