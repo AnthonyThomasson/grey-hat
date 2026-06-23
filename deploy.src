@@ -1,0 +1,66 @@
+// deploy_lib.src — build the tool project in the current directory.
+//   Usage: deploy_lib [toolDir]   (defaults to the current directory)
+srcFiles = function(comp, dir)
+    out = []
+    folder = comp.File(dir)
+    if folder == null then return out
+    for f in folder.get_files
+        if f.name.len > 4 and f.name[-4:] == ".src" then out.push(f)
+    end for
+    return out
+end function
+
+ensureDir = function(comp, path)
+    if comp.File(path) != null then return
+    cut = path.lastIndexOf("/")
+    parent = path[:cut]
+    if parent == "" then parent = "/"
+    comp.create_folder(parent, path[cut + 1:])
+end function
+
+buildProject = function(toolDir)
+    shell = get_shell
+    comp = shell.host_computer
+
+    ensureDir(comp, "/lib")
+    libs = 0
+    for f in srcFiles(comp, toolDir + "/libs")
+        res = f.copy("/lib", f.name)
+        if typeof(res) == "string" then
+            print("[FAIL] lib " + f.name + ": " + res)
+        else
+            print("[ OK ] lib " + f.name + " -> /lib/" + f.name)
+            libs = libs + 1
+        end if
+    end for
+
+    ensureDir(comp, "/bin")
+    tools = 0
+    for f in srcFiles(comp, toolDir)
+        binPath = "/bin/" + f.name[:-4]
+        old = comp.File(binPath)
+        if old != null then old.delete
+        res = shell.build(toolDir + "/" + f.name, "/bin")
+        if res != "" then
+            print("[FAIL] " + f.name + ": " + res)
+        else
+            print("[ OK ] " + f.name + " -> " + binPath)
+            tools = tools + 1
+        end if
+    end for
+
+    print("done — " + libs + " lib(s) -> /lib, " + tools + " tool(s) -> /bin")
+    return {"libs": libs, "tools": tools}
+end function
+
+if params.len > 0 and (params[0] == "-h" or params[0] == "--help") then
+    exit("deploy [toolDir] — move libs to /lib, build tools to /bin (default: cwd)")
+end if
+
+toolDir = current_path
+if params.len > 0 and params[0] != "" then
+    toolDir = params[0]
+    if toolDir[0] != "/" then toolDir = current_path + "/" + toolDir
+end if
+
+buildProject(toolDir)

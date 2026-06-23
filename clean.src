@@ -1,0 +1,35 @@
+// Command: clean [toolsDirName]
+// Cleanup before you disconnect from a box you ssh_safe'd into:
+//   - removes the deployed tools dir from your home (<home>/<name>, default "Tools")
+//   - opens LogViewer (via SSHLib) so you can delete the rows that show your visit
+// Run this IN the remote terminal, then type `exit`.
+// Why in-place (not a fresh connect): home_dir here resolves to the logged-in
+// user's home on THIS box, and you avoid creating a new connection log row just
+// to clean up the old ones.
+import_code("/lib/ssh_lib.src")
+
+if params.len > 0 and (params[0] == "-h" or params[0] == "--help") then
+    exit("leave [toolsDirName] — remove <home>/<name> (default Tools), then open the log")
+end if
+
+name = "Tools"
+if params.len > 0 and params[0] != "" then name = params[0]
+
+shell = get_shell
+comp = shell.host_computer
+toolsDir = home_dir + "/" + name
+
+folder = comp.File(toolsDir)
+if folder == null then
+    print("(skip) no tools dir at " + toolsDir)
+else
+    res = folder.delete
+    if typeof(res) == "string" and res != "" then
+        print("[FAIL] " + toolsDir + ": " + res)
+    else
+        print("removed " + toolsDir)
+    end if
+end if
+
+print("opening log — delete the rows that show your connection, then exit")
+SSHLib.openLog(shell)

@@ -1,0 +1,2 @@
+toolDir = home_dir + "/Scripts/Tools"
+cd(toolDir)
